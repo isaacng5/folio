@@ -1,0 +1,238 @@
+---
+title: "Ozone, heat and wind in New York, summer 1973"
+subtitle: "What five months of daily readings say about the weather that makes ozone worse"
+author: "Isaac Ng"
+date: today
+categories: [Air quality, Public health, R]
+abstract: |
+  Ground level ozone irritates the lungs and is worst on certain kinds of day. Using 153 days of readings from New York between May and September 1973, this short analysis asks which weather conditions went with high ozone. Ozone climbed through the summer, peaked in July and August, and was highest on hot, still, sunny days. Together, temperature, wind and sunlight explained about two thirds of the day to day variation in log ozone. The data come from a single summer and a handful of monitoring sites, so the results describe that summer rather than predict any other.
+format: folio-html
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+library(ggplot2)
+
+aq <- airquality
+aq$Date <- as.Date(sprintf("1973-%02d-%02d", aq$Month, aq$Day))
+aq$Temp_C <- (aq$Temp - 32) * 5 / 9
+aq$Month_name <- factor(month.name[aq$Month], levels = month.name[5:9])
+
+complete <- aq[complete.cases(aq[, c("Ozone", "Solar.R", "Wind", "Temp_C")]), ]
+n_days <- nrow(aq)
+n_missing_ozone <- sum(is.na(aq$Ozone))
+n_complete <- nrow(complete)
+
+r <- function(x, y) round(cor(x, y, use = "complete.obs"), 2)
+r_temp <- r(aq$Ozone, aq$Temp_C)
+r_wind <- r(aq$Ozone, aq$Wind)
+r_sun <- r(aq$Ozone, aq$Solar.R)
+
+worst <- aq[which.max(aq$Ozone), ]
+hot <- aq$Temp_C >= 30
+mean_hot <- round(mean(aq$Ozone[hot], na.rm = TRUE))
+mean_mild <- round(mean(aq$Ozone[!hot], na.rm = TRUE))
+
+model <- lm(log(Ozone) ~ Temp_C + Wind + Solar.R, data = complete)
+b <- coef(model)
+pct <- function(x) round((exp(x) - 1) * 100, 1)
+r2 <- round(summary(model)$r.squared * 100)
+
+theme_set(theme_minimal(base_size = 13) + theme(panel.grid.minor = element_blank()))
+green <- "#2A4A3A"; sage <- "#4A7A60"; gold <- "#A8843A"
+```
+
+## Introduction
+
+Ozone high in the atmosphere shields us from ultraviolet light. Down at street level it does harm. It forms when sunlight drives reactions between nitrogen oxides and volatile organic compounds, both of which come largely from traffic and industry. Breathing it inflames the airways, and people with asthma or other lung conditions tend to feel it first.
+
+Because sunlight drives the chemistry, ozone is a summer problem, and some summer days are much worse than others. This document looks at one well known record of that pattern: daily readings taken in New York in 1973, which ship with R as the `airquality` dataset. The question is simple. On the days when ozone was high, what was the weather doing?
+
+## Methods
+
+### Data
+
+The dataset holds `r n_days` days, from 1 May to 30 September 1973. Each day has four measurements:
+
+- **Ozone**: mean ozone in parts per billion between 1 pm and 3 pm, measured on Roosevelt Island.
+- **Solar radiation**: in Langleys, between 8 am and noon, measured in Central Park.
+- **Wind**: average speed in miles per hour, measured at LaGuardia Airport.
+- **Temperature**: the daily maximum, measured at LaGuardia Airport. I converted it from Fahrenheit to Celsius.
+
+The ozone figures came from the New York State Department of Conservation and the weather figures from the National Weather Service [@chambers1983].
+
+### Missing values
+
+Ozone is missing on `r n_missing_ozone` days, about a quarter of the summer, and solar radiation on a few more. @tbl-missing gives the counts. I did not fill the gaps. Every summary uses whatever readings exist for that measure, and the [model below](#sec-model) uses only the `r n_complete` days with all four.
+
+```{r}
+#| label: tbl-missing
+#| tbl-cap: "Missing readings by measure. Ozone has by far the most gaps."
+data.frame(
+  Measure = c("Ozone", "Solar radiation", "Wind", "Temperature"),
+  `Days recorded` = colSums(!is.na(aq[, c("Ozone", "Solar.R", "Wind", "Temp")])),
+  `Days missing` = colSums(is.na(aq[, c("Ozone", "Solar.R", "Wind", "Temp")])),
+  check.names = FALSE, row.names = NULL
+)
+```
+
+### Analysis
+
+I started with plots and correlations, then fitted a linear regression of log ozone on temperature, wind speed and solar radiation. Ozone is skewed, with a long tail of bad days, and taking the log makes the model fit far better. It also means each coefficient reads as a percentage change in ozone.
+
+## Results
+
+### Across the summer
+
+Ozone was low in May and June, rose sharply in July, stayed high through August and fell back in September (@fig-season). The worst single day was `r sub("^0", "", format(worst$Date, "%d %B"))`, at `r worst$Ozone` parts per billion.
+
+```{r}
+#| label: fig-season
+#| fig-cap: "Daily ozone through the summer of 1973. Each point is one day; the line is a smoothed trend, and gaps are days with no reading."
+ggplot(aq, aes(Date, Ozone)) +
+  geom_point(colour = green, alpha = .6) +
+  geom_smooth(method = "loess", span = .4, colour = gold, fill = "#ECD8A6") +
+  labs(x = NULL, y = "Ozone (ppb)")
+```
+
+@tbl-month gives the monthly averages. July and August were the hottest and stillest months, and also the worst for ozone.
+
+```{r}
+#| label: tbl-month
+#| tbl-cap: "Monthly averages. Each figure uses every day with a reading for that measure."
+mean_by <- function(v) round(tapply(aq[[v]], aq$Month_name, mean, na.rm = TRUE), 1)
+data.frame(
+  Month = levels(aq$Month_name),
+  `Ozone (ppb)` = mean_by("Ozone"),
+  `Max temp (°C)` = mean_by("Temp_C"),
+  `Wind (mph)` = mean_by("Wind"),
+  `Solar (Langleys)` = round(mean_by("Solar.R")),
+  check.names = FALSE, row.names = NULL
+)
+```
+
+### Heat
+
+Temperature tracked ozone more closely than anything else, with a correlation of `r r_temp`. On days that reached 30 °C or more, ozone averaged `r mean_hot` parts per billion, against `r mean_mild` on cooler days. The rise is not a straight line. Ozone barely moves until about 25 °C, then climbs steeply (@fig-temp).
+
+```{r}
+#| label: fig-temp
+#| fig-cap: "Ozone against the day's maximum temperature. The curve bends upwards above about 25 °C, where hot days start to bring much more ozone."
+ggplot(aq, aes(Temp_C, Ozone)) +
+  geom_point(colour = green, alpha = .65) +
+  geom_smooth(method = "loess", colour = gold, fill = "#ECD8A6") +
+  labs(x = "Maximum temperature (°C)", y = "Ozone (ppb)")
+```
+
+### Wind
+
+Wind pulled the other way (correlation `r r_wind`). Calm days let ozone build up over the city, while breezy days carried it away. Every reading above 100 parts per billion came on a day with wind under 10 miles per hour (@fig-wind).
+
+```{r}
+#| label: fig-wind
+#| fig-cap: "Ozone against average wind speed. High readings cluster on calm days."
+ggplot(aq, aes(Wind, Ozone)) +
+  geom_point(colour = sage, alpha = .7) +
+  geom_smooth(method = "loess", colour = gold, fill = "#ECD8A6") +
+  labs(x = "Wind speed (mph)", y = "Ozone (ppb)")
+```
+
+### Sunlight
+
+Sunlight mattered less on its own (correlation `r r_sun`). Plenty of sunny days had little ozone, but every day above 100 parts per billion had more morning sun than average (@fig-sun). That fits the chemistry: sunlight makes high ozone possible, and heat and still air decide whether it actually builds up.
+
+```{r}
+#| label: fig-sun
+#| fig-cap: "Ozone against morning solar radiation. Sun alone does not guarantee high ozone, but the worst days were sunny ones."
+ggplot(aq, aes(Solar.R, Ozone)) +
+  geom_point(colour = green, alpha = .65) +
+  labs(x = "Solar radiation (Langleys)", y = "Ozone (ppb)")
+```
+
+### Putting it together {#sec-model}
+
+The regression in @tbl-model uses all three measures at once, on the `r n_complete` complete days. Holding the other two fixed:
+
+- each extra degree of heat went with about `r pct(b["Temp_C"])`% more ozone;
+- each extra mile per hour of wind went with about `r abs(pct(b["Wind"]))`% less;
+- each extra 100 Langleys of sunlight went with about `r pct(100 * b["Solar.R"])`% more.
+
+Together they explain about `r r2`% of the variation in log ozone from one day to the next.
+
+```{r}
+#| label: tbl-model
+#| tbl-cap: "Regression of log ozone on weather. The percentage column turns each coefficient into the change in ozone for one more unit."
+s <- summary(model)$coefficients
+data.frame(
+  Term = c("Intercept", "Max temp (per °C)", "Wind (per mph)", "Solar radiation (per Langley)"),
+  Estimate = round(s[, 1], 4),
+  `Std. error` = round(s[, 2], 4),
+  `Change in ozone (%)` = c("", format(pct(s[-1, 1]), nsmall = 1)),
+  `p value` = ifelse(s[, 4] < .001, "< 0.001", sprintf("%.3f", s[, 4])),
+  check.names = FALSE, row.names = NULL
+)
+```
+
+### The worst days
+
+@tbl-worst lists the ten days with the highest ozone. Every one was warm, with a maximum of at least 26 °C, and every one was calm, with wind of 8 miles per hour or less.
+
+```{r}
+#| label: tbl-worst
+#| tbl-cap: "The ten highest ozone days of the summer. Warm, still days fill the list."
+w <- head(aq[order(-aq$Ozone), ], 10)
+data.frame(
+  Date = sub("^0", "", format(w$Date, "%d %B")),
+  `Ozone (ppb)` = w$Ozone,
+  `Max temp (°C)` = round(w$Temp_C, 1),
+  `Wind (mph)` = w$Wind,
+  `Solar (Langleys)` = w$Solar.R,
+  check.names = FALSE, row.names = NULL
+)
+```
+
+## Discussion
+
+The picture is consistent. Ozone in New York that summer was highest on hot, calm, sunny days and lowest on cool, windy ones, and three ordinary weather readings explain most of the difference between a good day and a bad one. None of this is new. It is the textbook account of how ground level ozone behaves, and that is part of why the dataset is so often used for teaching.
+
+The practical point still holds today. Ozone warnings tend to follow heat. A forecast of a hot, still afternoon is a fair signal that people with lung conditions should take care outdoors, especially later in the day.
+
+### Limitations
+
+- **One summer, one city.** These are five months of readings from a single year. They describe 1973 and nothing more.
+- **Different sites.** Ozone, wind and temperature were measured in different places, so a reading may not match the air someone actually breathed.
+- **Missing days.** A quarter of the ozone readings are missing. If they were missing for reasons linked to the weather, the averages could be off.
+- **No emissions data.** The traffic and industry that supply the raw ingredients are not in the data at all, so the model cannot separate weather from what was being emitted.
+- **Association, not cause.** The regression shows which conditions went together. The causal story comes from atmospheric chemistry, not from this analysis.
+
+## Conclusion
+
+In the summer of 1973, New York's worst ozone days were its hottest and stillest. Temperature mattered most, wind worked against ozone, and sunlight set the conditions for both. It is a small dataset, but it shows clearly why ozone is treated as a hot weather problem.
+
+## References
+
+::: {#refs}
+:::
+
+---
+references:
+- id: chambers1983
+  type: book
+  author:
+    - family: Chambers
+      given: John M.
+    - family: Cleveland
+      given: William S.
+    - family: Kleiner
+      given: Beat
+    - family: Tukey
+      given: Paul A.
+  title: Graphical Methods for Data Analysis
+  publisher: Wadsworth
+  issued:
+    year: 1983
+---

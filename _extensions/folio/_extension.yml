@@ -1,0 +1,32 @@
+title: Folio
+author: Isaac Ng
+version: 1.0.0
+quarto-required: ">=1.4.0"
+contributes:
+  formats:
+    html:
+      theme: [folio.scss]
+      toc: true
+      toc-location: left
+      toc-title: Contents
+      toc-depth: 3
+      toc-expand: true
+      title-block-banner: true
+      lightbox: auto
+      df-print: kable
+      fig-cap-location: bottom
+      tbl-cap-location: top
+      smooth-scroll: true
+      anchor-sections: false
+      code-copy: true
+      highlight-style: github
+      include-after-body: folio.html
+      fig-dpi: 192
+      fig-width: 7.5
+      fig-height: 4.5
+      filters:
+        - folio.lua
+    pdf:
+      df-print: kable
+    docx:
+      df-print: kable

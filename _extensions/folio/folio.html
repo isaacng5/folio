@@ -1,0 +1,315 @@
+<script>
+(function () {
+  var root = document.documentElement, body = document.body;
+  function store(k, v) {
+    try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; }
+  }
+  function svg(path) {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + path + '</svg>';
+  }
+  var ICON = {
+    left: svg('<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/>'),
+    right: svg('<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/>'),
+    light: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/>'),
+    dark: svg('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>'),
+    paper: svg('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>'),
+    expand: svg('<path d="M7 9l5-5 5 5M7 15l5 5 5-5"/>'),
+    collapse: svg('<path d="M7 4l5 5 5-5M7 20l5-5 5 5"/>')
+  };
+  function btn(key, icon, label) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'folio-btn'; b.dataset.folio = key;
+    b.innerHTML = icon; b.title = label; b.setAttribute('aria-label', label);
+    return b;
+  }
+  function label(b, text) { b.title = text; b.setAttribute('aria-label', text); }
+
+  var main = document.getElementById('quarto-document-content');
+  var header = document.getElementById('title-block-header');
+  if (header && main && !main.contains(header)) {
+    header.classList.remove('page-columns', 'page-full', 'toc-left');
+    header.querySelectorAll('.page-columns, .page-full').forEach(function (el) { el.classList.remove('page-columns', 'page-full'); });
+    main.insertBefore(header, main.firstChild);
+    body.classList.add('folio-banner-in-main');
+  }
+  var margin = document.getElementById('quarto-margin-sidebar');
+  var leftPanel = document.getElementById('quarto-sidebar-toc-left');
+  var titleEl = document.querySelector('#title-block-header .title');
+  var bar = document.createElement('header');
+  bar.className = 'folio-bar';
+  var leftBtn = leftPanel ? btn('left', ICON.left, 'Hide contents') : null;
+  if (leftBtn) bar.appendChild(leftBtn);
+  var t = document.createElement('a');
+  t.className = 'folio-bar__title'; t.href = '#';
+  t.textContent = titleEl ? titleEl.textContent.trim() : document.title;
+  t.addEventListener('click', function (e) { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  bar.appendChild(t);
+  var prog = document.createElement('div');
+  prog.className = 'folio-progress';
+  bar.appendChild(prog);
+  body.insertBefore(bar, body.firstChild);
+  body.classList.add('folio-has-bar');
+
+  var OFFSET = 76;
+  function goTo(el, hash) {
+    var top = window.scrollY + el.getBoundingClientRect().top - OFFSET;
+    window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    if (hash) history.replaceState(null, '', hash);
+  }
+  var anchor = null;
+  function findAnchor() {
+    var els = main.querySelectorAll('h1, h2, h3, h4, p, li, .quarto-float, table, pre, .callout');
+    for (var i = 0; i < els.length; i++) {
+      var r = els[i].getBoundingClientRect();
+      if (r.height && r.bottom > 70) return { el: els[i], top: r.top };
+    }
+    return null;
+  }
+  function holdAnchor(a, ms) {
+    if (!a) return;
+    var until = performance.now() + ms;
+    (function step() {
+      var d = a.el.getBoundingClientRect().top - a.top;
+      if (Math.abs(d) > 0.5) window.scrollBy({ top: d, behavior: 'instant' });
+      if (performance.now() < until) requestAnimationFrame(step);
+    })();
+  }
+  var anchorQueued = false;
+  window.addEventListener('scroll', function () {
+    if (anchorQueued) return;
+    anchorQueued = true;
+    requestAnimationFrame(function () { anchorQueued = false; anchor = findAnchor(); });
+  }, { passive: true });
+
+  function onScroll() {
+    var h = root.scrollHeight - window.innerHeight;
+    prog.style.width = (h > 0 ? (window.scrollY / h) * 100 : 0) + '%';
+    bar.classList.toggle('is-scrolled', window.scrollY > 8);
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll);
+  onScroll();
+  var toc = document.getElementById('TOC');
+  if (toc) {
+    toc.querySelectorAll('a[href^="#"]').forEach(function (a) {
+      a.classList.add('noZensmooth');
+      a.addEventListener('click', function (e) {
+        var target = document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)));
+        if (!target) return;
+        e.preventDefault();
+        var heading = target.matches('section') ? target.querySelector('h1, h2, h3, h4, h5, h6') : null;
+        goTo(heading || target, a.getAttribute('href'));
+      });
+    });
+    toc.querySelectorAll('ul.collapse').forEach(function (ul) { ul.classList.remove('collapse'); ul.classList.add('folio-sub'); });
+    var tocTitle = document.getElementById('toc-title');
+    if (tocTitle && toc.querySelector('ul ul')) {
+      var head = document.createElement('div');
+      head.className = 'folio-panel-head';
+      tocTitle.parentNode.insertBefore(head, tocTitle);
+      head.appendChild(tocTitle);
+      var foldBtn = btn('fold', ICON.collapse, 'Collapse all');
+      head.appendChild(foldBtn);
+      var setFold = function (on, save) {
+        body.classList.toggle('folio-toc-collapsed', on);
+        foldBtn.innerHTML = on ? ICON.expand : ICON.collapse;
+        label(foldBtn, on ? 'Expand all' : 'Collapse all');
+        if (save) store('folio-toc-collapsed', on ? '1' : '0');
+      };
+      setFold(store('folio-toc-collapsed') === '1', false);
+      foldBtn.addEventListener('click', function () { setFold(!body.classList.contains('folio-toc-collapsed'), true); });
+    }
+  }
+  var numeric = /^[<>≤≥~±+\-−]?\s*[\d][\d.,]*\s*%?$|^[<>≤≥]\s*\.?\d[\d.,]*$/;
+  main.querySelectorAll('table').forEach(function (table) {
+    var rows = table.tBodies.length ? table.tBodies[0].rows : [];
+    if (!rows.length) return;
+    var cols = rows[0].cells.length;
+    for (var c = 0; c < cols; c++) {
+      var seen = 0, ok = true;
+      for (var r = 0; r < rows.length && ok; r++) {
+        var cell = rows[r].cells[c];
+        if (!cell) continue;
+        var t = cell.textContent.trim();
+        if (t === '' || t === 'NA' || t === '—') continue;
+        seen++;
+        ok = numeric.test(t);
+      }
+      if (!seen || !ok) continue;
+      for (var r2 = 0; r2 < table.rows.length; r2++) {
+        var x = table.rows[r2].cells[c];
+        if (x) { x.style.textAlign = 'center'; if (r2 > 0 || x.tagName === 'TD') x.style.whiteSpace = 'nowrap'; }
+      }
+    }
+  });
+
+  var scrollers = [];
+  main.querySelectorAll('table').forEach(function (t) {
+    var box = t.closest('.kable-table, .cell-output-display');
+    if (box && scrollers.indexOf(box) < 0) scrollers.push(box);
+  });
+  function fade(box) {
+    box.classList.toggle('folio-scroll-more', box.scrollWidth - box.clientWidth - box.scrollLeft > 2);
+  }
+  scrollers.forEach(function (box) {
+    box.addEventListener('scroll', function () { fade(box); }, { passive: true });
+    fade(box);
+  });
+  window.addEventListener('resize', function () { scrollers.forEach(fade); });
+  if ('ResizeObserver' in window) {
+    var ro = new ResizeObserver(function () { scrollers.forEach(fade); });
+    ro.observe(main);
+  }
+
+  var items = { fig: [], tbl: [] }, n = 0;
+  main.querySelectorAll('.quarto-float, figure, .cell-output-display > img, .cell-output-display > p > img, .cell-output-display table').forEach(function (el) {
+    if (el.parentElement.closest('.quarto-float')) return;
+    if (el.tagName !== 'FIGURE' && !el.classList.contains('quarto-float') && el.closest('figure')) return;
+    var target = el.classList.contains('quarto-float') || el.tagName === 'FIGURE' ? el : (el.closest('.cell-output-display') || el);
+    if (target.dataset.folioSeen) return;
+    target.dataset.folioSeen = '1';
+    var isTbl = el.matches('.quarto-float-tbl, [id^="tbl-"], table') || !!el.querySelector('figure.quarto-float-tbl');
+    var img = el.tagName === 'IMG' ? el : el.querySelector('img');
+    var capEl = el.querySelector('figcaption, caption');
+    var text = capEl ? capEl.textContent.replace(/\s+/g, ' ').trim() : '';
+    var no = isTbl ? 'Table' : 'Figure', title = '', cap = '';
+    var m = text.match(/^((?:Figure|Table|Fig\.?)\s*[\w.]+?)\s*[:.]\s*(.*)$/i);
+    if (m) { no = m[1]; text = m[2]; }
+    var s = text.match(/^(.+?[.!?])\s+(.+)$/);
+    if (s) { title = s[1].replace(/\.$/, ''); cap = s[2]; } else { title = text.replace(/\.$/, ''); }
+    if (!title) title = isTbl ? 'Untitled table' : 'Untitled figure';
+    if (!target.id) target.id = 'folio-float-' + (++n);
+    (isTbl ? items.tbl : items.fig).push({ el: target, no: no, title: title, cap: cap, img: img && !isTbl ? img.currentSrc || img.src : null });
+  });
+
+  var rail = null, links = [];
+  if (margin && (items.fig.length || items.tbl.length)) {
+    rail = document.createElement('nav');
+    rail.className = 'folio-rail';
+    rail.setAttribute('aria-label', 'Figures and tables');
+    var rhead = document.createElement('div');
+    rhead.className = 'folio-panel-head';
+    var rtitle = document.createElement('p');
+    rtitle.textContent = items.fig.length && items.tbl.length ? 'Figures and tables' : items.fig.length ? 'Figures' : 'Tables';
+    rhead.appendChild(rtitle);
+    var capBtn = btn('captions', ICON.expand, 'Show captions');
+    rhead.appendChild(capBtn);
+    rail.appendChild(rhead);
+    [['fig', 'Figures'], ['tbl', 'Tables']].forEach(function (g) {
+      if (!items[g[0]].length) return;
+      var ul = document.createElement('ul'); ul.className = 'folio-rail__list';
+      items[g[0]].forEach(function (it) {
+        var li = document.createElement('li'), a = document.createElement('a');
+        a.href = '#' + it.el.id;
+        a.className = 'noZensmooth';
+        a.title = it.no + '. ' + it.title + (it.cap ? '. ' + it.cap : '');
+        if (it.img) {
+          var th = document.createElement('span'); th.className = 'folio-rail__thumb';
+          th.style.backgroundImage = 'url("' + it.img + '")'; a.appendChild(th);
+        } else { a.classList.add('no-thumb'); }
+        var txt = document.createElement('span');
+        [['folio-rail__no', it.no], ['folio-rail__title', it.title], ['folio-rail__cap', it.cap]].forEach(function (p) {
+          if (!p[1]) return;
+          var sp = document.createElement('span'); sp.className = p[0]; sp.textContent = p[1]; txt.appendChild(sp);
+        });
+        a.appendChild(txt);
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          goTo(it.el, '#' + it.el.id);
+          it.el.classList.remove('folio-flash'); void it.el.offsetWidth; it.el.classList.add('folio-flash');
+        });
+        links.push({ a: a, el: it.el });
+        li.appendChild(a); ul.appendChild(li);
+      });
+      rail.appendChild(ul);
+    });
+    margin.appendChild(rail);
+    var setCaps = function (on, save) {
+      rail.classList.toggle('is-open', on);
+      capBtn.innerHTML = on ? ICON.collapse : ICON.expand;
+      label(capBtn, on ? 'Hide captions' : 'Show captions');
+      if (save) store('folio-captions', on ? '1' : '0');
+    };
+    setCaps(store('folio-captions') === '1', false);
+    capBtn.addEventListener('click', function () { setCaps(!rail.classList.contains('is-open'), true); });
+    var keepInView = function (a) {
+      var r = rail.getBoundingClientRect(), b = a.getBoundingClientRect();
+      if (b.top < r.top) rail.scrollTop += b.top - r.top - 8;
+      else if (b.bottom > r.bottom) rail.scrollTop += b.bottom - r.bottom + 8;
+    };
+
+    if ('IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          links.forEach(function (l) {
+            if (l.el !== en.target) return;
+            l.a.classList.toggle('active', en.isIntersecting);
+            if (en.isIntersecting) keepInView(l.a);
+          });
+        });
+      }, { rootMargin: '-35% 0px -35% 0px' });
+      links.forEach(function (l) { io.observe(l.el); });
+    }
+  }
+  var modes = ['light', 'dark', 'paper'];
+  var names = { light: 'Light', dark: 'Dark', paper: 'Paper' };
+  var modeBtn = btn('mode', ICON.light, 'Light mode');
+  bar.appendChild(modeBtn);
+  var rightBtn = rail ? btn('right', ICON.right, 'Hide figures and tables') : null;
+  if (rightBtn) bar.appendChild(rightBtn);
+
+  function setMode(m, save) {
+    root.dataset.mode = m;
+    modeBtn.innerHTML = ICON[m];
+    var next = modes[(modes.indexOf(m) + 1) % modes.length];
+    label(modeBtn, names[m] + ' mode. Switch to ' + names[next].toLowerCase());
+    if (save) store('folio-mode', m);
+  }
+  function setHide(side, on, save, quiet) {
+    var b = side === 'left' ? leftBtn : rightBtn;
+    if (!b) return;
+    if (!quiet && body.classList.contains('folio-hide-' + side) !== on) holdAnchor(findAnchor(), 600);
+    body.classList.toggle('folio-hide-' + side, on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    label(b, (on ? 'Show ' : 'Hide ') + (side === 'left' ? 'contents' : 'figures and tables'));
+    if (save && window.innerWidth >= WIDE) store('folio-hide-' + side, on ? '1' : '0');
+  }
+  setMode(modes.indexOf(root.dataset.mode) >= 0 ? root.dataset.mode : 'light', false);
+  var WIDE = 1180, NARROW = 900;
+  function isHidden(side) { return body.classList.contains('folio-hide-' + side); }
+  var lastW = window.innerWidth;
+  function fits() {
+    var w = window.innerWidth, shrinking = w < lastW;
+    lastW = w;
+    if (!shrinking) return;
+    if (w < 1140 && !isHidden('left') && !isHidden('right')) setHide('right', true, false, true);
+    if (w < 700) { setHide('right', true, false, true); setHide('left', true, false, true); }
+  }
+  body.classList.add('folio-no-anim');
+  var wide = window.innerWidth >= WIDE;
+  setHide('left', wide ? store('folio-hide-left') === '1' : true, false);
+  setHide('right', wide ? store('folio-hide-right') === '1' : true, false);
+  requestAnimationFrame(function () { requestAnimationFrame(function () { body.classList.remove('folio-no-anim'); }); });
+  var resizeTimer;
+  var resizeAnchor = null;
+  window.addEventListener('resize', function () {
+    if (!resizeAnchor) resizeAnchor = anchor || findAnchor();
+    holdAnchor(resizeAnchor, 250);
+    body.classList.add('folio-no-anim');
+    fits();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { body.classList.remove('folio-no-anim'); resizeAnchor = null; anchor = findAnchor(); }, 300);
+  });
+
+  modeBtn.addEventListener('click', function () {
+    setMode(modes[(modes.indexOf(root.dataset.mode) + 1) % modes.length], true);
+  });
+  function toggle(side) {
+    var open = isHidden(side);
+    if (open && window.innerWidth < NARROW) setHide(side === 'left' ? 'right' : 'left', true, false);
+    setHide(side, !open, true);
+  }
+  if (leftBtn) leftBtn.addEventListener('click', function () { toggle('left'); });
+  if (rightBtn) rightBtn.addEventListener('click', function () { toggle('right'); });
+})();
+</script>

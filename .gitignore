@@ -1,0 +1,6 @@
+/*.html
+/*.pdf
+/*.docx
+/*_files/
+.quarto/
+.DS_Store
